@@ -46,6 +46,9 @@ local function endpoint(path)
     return "https://weread.qq.com" .. path
 end
 
+local skills_page_url = endpoint("/r/weread-skills")
+local api_key_url = endpoint("/api/skills/apikeyGet?only_show=1")
+
 local function urlencode(value)
     return tostring(value or ""):gsub("([^%w%-_%.~])", function(char)
         return string.format("%%%02X", string.byte(char))
@@ -88,7 +91,7 @@ local function header_value(headers, name)
     return nil
 end
 
-local function response_vid(response, client)
+local function response_vid(response, login_cookies)
     local candidates = {
         response.webLoginVid,
         response.vid,
@@ -101,14 +104,21 @@ local function response_vid(response, client)
             return tostring(value)
         end
     end
-    local cookies = client.settings:get("cookies", {})
-    if has_text(cookies.wr_vid) then
-        return tostring(cookies.wr_vid)
+    if has_text(login_cookies.wr_vid) then
+        return tostring(login_cookies.wr_vid)
     end
     return ""
 end
 
-local function get_public_json(client, path, query, timeout)
+local function merge_response_cookies(cookies, headers)
+    local set_cookie = header_value(headers, "set-cookie")
+    if set_cookie then
+        return Cookie.merge_set_cookie(cookies or {}, set_cookie)
+    end
+    return cookies or {}
+end
+
+local function get_public_json(client, path, query, timeout, login_cookies)
     local parts = {}
     for key, value in pairs(query or {}) do
         if value ~= nil and tostring(value) ~= "" then
@@ -124,21 +134,17 @@ local function get_public_json(client, path, query, timeout)
         url = url,
         method = "GET",
         timeout = timeout,
+        skip_cookie = true,
         headers = {
             ["Accept"] = "application/json, text/plain, */*",
-            ["Origin"] = "https://weread.qq.com",
-            ["Referer"] = "https://weread.qq.com/",
+            ["Referer"] = skills_page_url,
             ["X-SSR-Request-Id"] = request_id(),
+            ["Cookie"] = Cookie.to_header(login_cookies or {}),
         }
     })
-    local set_cookie = header_value(headers, "set-cookie")
-    if set_cookie then
-        local cookies = client.settings:get("cookies", {})
-        client.settings:set("cookies", Cookie.merge_set_cookie(cookies, set_cookie))
-        client.settings:flush()
-    end
+    login_cookies = merge_response_cookies(login_cookies, headers)
     if code and code >= 200 and code < 300 then
-        return client:json_decode(text or ""), code, headers
+        return client:json_decode(text or ""), code, headers, login_cookies
     end
     error("HTTP " .. tostring(code or "nil") .. " from " .. path)
 end
@@ -162,19 +168,42 @@ local function make_fingerprint(uid)
 end
 
 local function request_uid(client)
-    local response = response_data(get_public_json(client, "/api/auth/getLoginUid", {}, 20))
+    local login_cookies = {}
+    local _, page_code, page_headers = client:request_follow({
+        url = skills_page_url,
+        method = "GET",
+        timeout = { 10, 20 },
+        maxredirects = 5,
+        skip_cookie = true,
+        headers = {
+            ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            ["Referer"] = endpoint("/"),
+        },
+    })
+    login_cookies = merge_response_cookies(login_cookies, page_headers)
+    if not page_code or page_code < 200 or page_code >= 300 then
+        error("unable to open WeRead login page")
+    end
+
+    local raw_response, _, _, updated_cookies =
+        get_public_json(client, "/api/auth/getLoginUid", {}, { 10, 20 }, login_cookies)
+    login_cookies = updated_cookies
+    local response = response_data(raw_response)
     if not has_text(response.uid) then
         error("login uid missing")
     end
-    return response.uid
+    return response.uid, login_cookies
 end
 
-local function poll_login_info(client, uid, timeout_seconds)
+local function poll_login_info(client, uid, timeout_seconds, login_cookies)
     local deadline = os.time() + timeout_seconds
     while os.time() <= deadline do
         emit({ state = "waiting", stage = "phone", message = "waiting for phone confirmation" })
-        local response = response_data(get_public_json(client, "/api/auth/getLoginInfo", { uid = uid, otp = "" }, 70))
-        local vid = response_vid(response, client)
+        local raw_response, _, _, updated_cookies =
+            get_public_json(client, "/api/auth/getLoginInfo", { uid = uid, otp = "" }, { 5, 8 }, login_cookies)
+        login_cookies = updated_cookies
+        local response = response_data(raw_response)
+        local vid = response_vid(response, login_cookies)
         debug_emit({
             state = "debug",
             step = "getLoginInfo",
@@ -183,12 +212,12 @@ local function poll_login_info(client, uid, timeout_seconds)
             has_web_login_vid = has_text(response.webLoginVid),
             has_vid = has_text(response.vid),
             has_user_vid = has_text(response.userVid),
-            has_cookie_vid = has_text(client.settings:get("cookies", {}).wr_vid),
+            has_cookie_vid = has_text(login_cookies.wr_vid),
             has_access_token = has_text(response.accessToken),
         })
         if response.succeed == true and has_text(vid) and has_text(response.accessToken) then
             response.resolvedVid = vid
-            return response
+            return response, login_cookies
         end
         local logic_code = tostring(response.logicCode or "")
         if logic_code == "NEED_OTP" then
@@ -203,20 +232,46 @@ local function poll_login_info(client, uid, timeout_seconds)
     error("login timed out")
 end
 
-local function initialize_session(client, login_result)
-    local cookies = client.settings:get("cookies", {})
+local function initialize_session(client, login_result, login_cookies)
+    local cookies = login_cookies or {}
     cookies.wr_vid = tostring(login_result.resolvedVid or login_result.webLoginVid or login_result.vid or login_result.userVid)
     cookies.wr_skey = tostring(login_result.accessToken)
-    client.settings:set("logged_out", false)
-    client.settings:set("cookies", cookies)
-    client.settings:set("wr_ticket", "")
-    client.settings:set("wr_wrpa", "")
+    client.settings:update_auth({
+        logged_out = false,
+        cookies = cookies,
+        wr_ticket = "",
+        wr_wrpa = "",
+    }, { replace_cookies = true })
     local ok_renew = pcall(function()
         client:renew_cookie()
     end)
     if not ok_renew then
         client.settings:flush()
     end
+
+    local api_text, api_code, api_headers = client:request({
+        url = api_key_url,
+        method = "GET",
+        timeout = { 10, 20 },
+        skip_cookie = true,
+        headers = {
+            ["Accept"] = "application/json, text/plain, */*",
+            ["Referer"] = skills_page_url,
+            ["Cookie"] = Cookie.to_header(client.settings:get("cookies", {})),
+            ["X-Vid"] = cookies.wr_vid,
+            ["X-Skey"] = cookies.wr_skey,
+        },
+    })
+    if not api_code or api_code < 200 or api_code >= 300 then
+        error("unable to retrieve WeRead Skill API key")
+    end
+    client.settings:merge_set_cookie(header_value(api_headers, "set-cookie"))
+    local api_result = client:json_decode(api_text or "")
+    local api_key = type(api_result) == "table" and api_result.apikey or ""
+    if not has_text(api_key) then
+        error("WeRead Skill API key is not enabled for this account")
+    end
+    client.settings:update_auth({ api_key = api_key })
 end
 
 local ok, result = pcall(function()
@@ -224,17 +279,18 @@ local ok, result = pcall(function()
     local client = Client:new(config)
     local timeout_seconds = tonumber(os.getenv("RM_WEREAD_LOGIN_TIMEOUT") or "120") or 120
 
-    local uid = request_uid(client)
+    local uid, login_cookies = request_uid(client)
     local confirm_url = "https://weread.qq.com/web/confirm?uid=" .. uid
-    emit({ state = "qr", uid = uid, confirm_url = confirm_url })
+    emit({ state = "qr", confirm_url = confirm_url })
     if os.getenv("RM_WEREAD_LOGIN_ONCE") == "1" then
         return { state = "waiting", message = "login not completed" }
     end
 
-    local login_result = poll_login_info(client, uid, timeout_seconds)
+    local login_result, authenticated_cookies =
+        poll_login_info(client, uid, timeout_seconds, login_cookies)
     emit({ state = "waiting", stage = "session", message = "confirmed" })
 
-    initialize_session(client, login_result)
+    initialize_session(client, login_result, authenticated_cookies)
     config:flush()
 
     local status = config:redacted_status()

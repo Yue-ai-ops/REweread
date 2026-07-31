@@ -90,6 +90,7 @@ end
 local function save_session(path, values)
     ensure_parent_dir(path)
     local session = {
+        api_key = has_text(values.api_key) and values.api_key or "",
         cookies = type(values.cookies) == "table" and values.cookies or {},
         wr_ticket = has_text(values.wr_ticket) and values.wr_ticket or "",
         wr_wrpa = has_text(values.wr_wrpa) and values.wr_wrpa or "",
@@ -150,7 +151,9 @@ function ConfigBridge:reload()
     self.session = load_session(self.session_path)
     local session = self.session
     self.values = {}
-    self.values.api_key = has_text(self.config.api_key) and self.config.api_key or ""
+    self.values.api_key = has_text(session.api_key)
+        and session.api_key
+        or (has_text(self.config.api_key) and self.config.api_key or "")
     self.values.logged_out = session.logged_out == true
     self.values.cookies = {}
     self.values.wr_ticket = ""
@@ -186,6 +189,37 @@ end
 
 function ConfigBridge:set(key, value)
     self.values[key] = value
+end
+
+function ConfigBridge:merge_set_cookie(set_cookie)
+    if set_cookie == nil then
+        return
+    end
+    self.values.cookies = Cookie.merge_set_cookie(
+        self.values.cookies or {},
+        set_cookie
+    )
+end
+
+function ConfigBridge:update_auth(updates, opts)
+    updates = updates or {}
+    opts = opts or {}
+    if type(updates.cookies) == "table" then
+        if opts.replace_cookies == true then
+            self.values.cookies = deepcopy(updates.cookies)
+        else
+            self.values.cookies = merge_cookie_tables(
+                self.values.cookies or {},
+                updates.cookies
+            )
+        end
+    end
+    for _, key in ipairs({ "api_key", "wr_ticket", "wr_wrpa", "logged_out" }) do
+        if updates[key] ~= nil then
+            self.values[key] = deepcopy(updates[key])
+        end
+    end
+    self:flush()
 end
 
 function ConfigBridge:flush()

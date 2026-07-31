@@ -370,7 +370,7 @@ assert(qrLoginTool.includes('state = "waiting"'), 'QR login helper must emit wai
 assert(qrLoginTool.includes('config:flush()'), 'QR login helper must persist the session after login');
 assert(qrLoginTool.includes('redacted_status'), 'QR login helper must finish with redacted account status');
 assert(!qrLoginTool.includes('accessToken =') && !qrLoginTool.includes('refreshToken =') && !qrLoginTool.includes('skey = data'), 'QR login helper must not assign secrets into printable result fields');
-assert(!qrLoginTool.includes('Cookie.to_header') && !qrLoginTool.includes('wr_skey='), 'QR login helper must not print raw cookies');
+assert(!qrLoginTool.includes('emit({ state = "qr", uid = uid') && !qrLoginTool.includes('wr_skey='), 'QR login helper must not print raw cookie or duplicate uid fields');
 
 const configBridge = read('apps/weread-move/lib/config_bridge.lua');
 assert(configBridge.includes('session_path'), 'ConfigBridge must maintain an app-owned session file path');

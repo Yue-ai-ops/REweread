@@ -6976,6 +6976,11 @@ Window {
             opacity: root.magicMenuOpen ? 0.92 : 0.72
             z: 21
             Text { anchors.centerIn: parent; text: "设置"; color: root.mutedInk; font.pixelSize: 16 }
+            MouseArea {
+                id: magicMenuTouchArea
+                anchors.fill: parent
+                onClicked: root.magicMenuOpen = !root.magicMenuOpen
+            }
         }
         Rectangle {
             id: magicMenuPanel

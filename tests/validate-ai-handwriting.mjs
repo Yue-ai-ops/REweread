@@ -38,7 +38,8 @@ assert(qml.includes('magicPauseTimer') && qml.includes('recognizeStrokeBlock(bat
 assert(qml.includes('magicStrokeRecords') && qml.includes('strokes: root.magicStrokeRecords') && qml.includes('magicQuestionFadeTimer'), 'Magic Book must preserve a question until it starts the original-style ink fade');
 assert(!qml.includes('magicStrokeRecords.length > 0 || magicAwaitingReply'), 'Magic Book must not erase earlier pen strokes while a Chinese character is still being written');
 assert(qml.includes('magicRevealTimer') && qml.includes('magicFontFamily'), 'Magic Book replies must gradually reveal in a selectable handwriting font');
-assert(qml.includes('id: magicMenuDot') && qml.includes('magicMenuDotHit') && qml.includes('magicMenuPenTap'), 'Magic Book controls must stay behind a pen-only bottom dot');
+assert(qml.includes('id: magicMenuDot') && qml.includes('magicMenuDotHit') && qml.includes('magicMenuPenTap'), 'Magic Book controls must retain the low-chrome pen affordance');
+assert(qml.includes('id: magicMenuTouchArea') && qml.includes('onClicked: root.magicMenuOpen = !root.magicMenuOpen'), 'Magic Book settings must also open by touch so users always have an exit path');
 assert(qml.includes('!stylusStore.active && !root.magicMenuOpen') && qml.includes('palmRejectionActive && !root.magicMenuOpen'), 'Magic Book must reject accidental touch while writing but release controls for its settings menu');
 assert(qml.includes('magicInkBottomY = 0') && qml.includes('y: root.magicNotebookAnswerTop'), 'Magic Book replies must move to the top once the handwritten question has faded');
 assert(qml.includes('clearMagicPage()') && qml.includes('magicInk.clearLive()'), 'Magic Book clear must remove both stored and live framebuffer ink');

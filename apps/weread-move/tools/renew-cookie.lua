@@ -26,6 +26,44 @@ local function missing_login_message()
     return "微信读书登录 Cookie 未配置。请在微信读书 App 的账号页使用扫码登录，或点续期 Cookie 后再重试。"
 end
 
+local function header_value(headers, name)
+    local target = tostring(name or ""):lower()
+    for key, value in pairs(headers or {}) do
+        if tostring(key):lower() == target then
+            return value
+        end
+    end
+    return nil
+end
+
+local function refresh_api_key(client, config)
+    if config:is_api_configured() then
+        return
+    end
+    local cookies = config:get("cookies", {})
+    local text, code, headers = client:request({
+        url = "https://weread.qq.com/api/skills/apikeyGet?only_show=1",
+        method = "GET",
+        timeout = { 10, 20 },
+        headers = {
+            ["Accept"] = "application/json, text/plain, */*",
+            ["Referer"] = "https://weread.qq.com/r/weread-skills",
+            ["X-Vid"] = tostring(cookies.wr_vid or ""),
+            ["X-Skey"] = tostring(cookies.wr_skey or ""),
+        },
+    })
+    if not code or code < 200 or code >= 300 then
+        error("微信读书 Skill API 凭据获取失败。")
+    end
+    config:merge_set_cookie(header_value(headers, "set-cookie"))
+    local result = client:json_decode(text or "")
+    local api_key = type(result) == "table" and result.apikey or ""
+    if type(api_key) ~= "string" or api_key == "" then
+        error("微信读书 Skill 尚未启用 API 凭据。")
+    end
+    config:update_auth({ api_key = api_key })
+end
+
 local ok, result = pcall(function()
     local config = ConfigBridge:new()
     if not config:is_cookie_configured() then
@@ -34,6 +72,7 @@ local ok, result = pcall(function()
 
     local client = Client:new(config)
     client:renew_cookie()
+    refresh_api_key(client, config)
     config:flush()
 
     local status = config:redacted_status()
