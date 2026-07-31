@@ -14,6 +14,7 @@ const renewHelper = fs.readFileSync('apps/weread-move/tools/renew-cookie.lua', '
 const logoutHelper = fs.readFileSync('apps/weread-move/tools/logout.lua', 'utf8');
 const configBridge = fs.readFileSync('apps/weread-move/lib/config_bridge.lua', 'utf8');
 const clientBridge = fs.readFileSync('apps/weread-move/lib/client.lua', 'utf8');
+const contentBridge = fs.readFileSync('apps/weread-move/lib/content.lua', 'utf8');
 const cookieBridge = fs.readFileSync('apps/weread-move/lib/cookie.lua', 'utf8');
 const runner = fs.readFileSync('scripts/run-weread-qt-on-move.sh', 'utf8');
 const installer = fs.readFileSync('scripts/install-weread-qt-appload.sh', 'utf8');
@@ -40,6 +41,7 @@ assert(helper.includes('/api/skills/apikeyGet?only_show=1') && helper.includes('
 assert(renewHelper.includes('/api/skills/apikeyGet?only_show=1') && renewHelper.includes('refresh_api_key'), 'cookie renewal must repair a missing WeRead Skill API key without another QR scan');
 assert(!helper.includes('state = "qr", uid = uid'), 'QR helper must not duplicate the private login uid in its machine-readable output');
 assert(clientBridge.includes('require("weread.lib.client")'), 'Qt helpers must bridge the current namespaced weread.koplugin client module');
+assert(contentBridge.includes('require("ffi/loadlib")') && contentBridge.includes('require("weread.lib.content")'), 'Qt content helpers must initialize KOReader native library loading before EPUB packaging');
 assert(cookieBridge.includes('require("weread.lib.cookie")') && cookieBridge.includes('parse_cookie_header') && cookieBridge.includes('extract_from_curl'), 'Qt helpers must bridge current cookie handling while retaining legacy config import support');
 assert(configBridge.includes('function ConfigBridge:update_auth') && configBridge.includes('function ConfigBridge:merge_set_cookie'), 'ConfigBridge must implement the current client settings contract');
 assert(source.includes('手机已确认，正在保存登录态'), 'account bridge must show a separate session-save stage after phone confirmation');
