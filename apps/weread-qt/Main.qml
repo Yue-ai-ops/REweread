@@ -7434,11 +7434,6 @@ Window {
                 color: root.paperColor
             }
 
-            MouseArea {
-                anchors.fill: parent
-                onClicked: {}
-            }
-
             Text {
                 x: 42
                 y: 32
@@ -7653,9 +7648,11 @@ Window {
                     font.pixelSize: 28
                     font.weight: Font.Bold
                 }
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: root.openOrDownloadBook(detailPage.book)
+                TapHandler {
+                    acceptedDevices: PointerDevice.TouchScreen | PointerDevice.Mouse | PointerDevice.Stylus
+                    gesturePolicy: TapHandler.ReleaseWithinBounds
+                    margin: 20
+                    onTapped: root.openOrDownloadBook(detailPage.book)
                 }
             }
 
@@ -7675,9 +7672,11 @@ Window {
                     font.pixelSize: 26
                     font.weight: Font.Bold
                 }
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: {
+                TapHandler {
+                    acceptedDevices: PointerDevice.TouchScreen | PointerDevice.Mouse | PointerDevice.Stylus
+                    gesturePolicy: TapHandler.ReleaseWithinBounds
+                    margin: 12
+                    onTapped: {
                         if (downloadStore.running) {
                             downloadStore.cancelDownload()
                         } else if (detailPage.book.downloadState === "full") {

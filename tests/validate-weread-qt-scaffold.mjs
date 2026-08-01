@@ -995,6 +995,14 @@ assert(!enterReaderSnippet.includes('notesStore.refreshBookNotes(bookId)'), 'nor
 assert(enterReaderSnippet.includes('root.scheduleReaderSocialPrefetch()'), 'normal reader opens must schedule non-blocking popular community comment prefetch');
 assert(!qml.includes('返回系统'), 'reader settings must not show an ugly return-to-system button');
 assert(qml.includes('text: "继续阅读"'), 'primary action text should be explicit and centered');
+const detailRedesignIndex = qml.indexOf('id: detailRedesign');
+const detailRedesignSnippet = qml.slice(detailRedesignIndex, qml.indexOf('id: readerPage', detailRedesignIndex));
+assert(!detailRedesignSnippet.includes('onClicked: {}'), 'detail redesign must not place an inert full-screen MouseArea over its actions');
+const detailPrimaryActionIndex = detailRedesignSnippet.indexOf('id: detailPrimaryAction');
+const detailPrimaryActionSnippet = detailRedesignSnippet.slice(detailPrimaryActionIndex, detailPrimaryActionIndex + 900);
+assert(detailPrimaryActionSnippet.includes('TapHandler {'), 'detail Continue Reading must use a touch-native TapHandler');
+assert(detailPrimaryActionSnippet.includes('PointerDevice.TouchScreen'), 'detail Continue Reading must explicitly accept touchscreen input');
+assert(detailPrimaryActionSnippet.includes('margin: 20'), 'detail Continue Reading must expose a forgiving expanded touch target');
 assert(qml.includes('detailPage.book.downloadActionText'), 'download action should reflect real cached/offline state');
 assert(qml.includes('id: detailProgressBar'), 'detail page must include a visible reading progress bar');
 assert(qml.includes('text: "阅读进度"'), 'detail page must label the reading progress in Chinese');
