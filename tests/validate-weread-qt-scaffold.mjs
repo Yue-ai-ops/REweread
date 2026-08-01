@@ -651,6 +651,15 @@ assert(qml.includes('function buildReaderPaginationBatch'), 'reader pagination m
 assert(qml.includes('function startReaderPaginationBuild'), 'explicit full-book self-tests must retain a cooperative pagination builder');
 assert(qml.includes('function buildReaderPaginationWindowFromOffset'), 'reader must render the saved reading offset immediately without waiting for full-book pagination');
 assert(qml.includes('root.buildReaderPaginationWindowFromOffset(savedOffset, 12)'), 'reader entry must preload only the current window from saved progress');
+const readerOpenFeedbackFunction = qml.slice(qml.indexOf('function enterReaderForBook'), qml.indexOf('function readerPageForCatalogChapter'));
+assert(qml.includes('property bool readerOpening: false'), 'reader entry must expose immediate visible opening feedback');
+assert(qml.includes('readerOpenFeedbackTimer.restart()'), 'reader entry must yield one frame before parsing the selected EPUB');
+assert(readerOpenFeedbackFunction.indexOf('root.screenName = "reader"') >= 0 && readerOpenFeedbackFunction.indexOf('root.screenName = "reader"') < readerOpenFeedbackFunction.indexOf('readerStore.loadBook(bookId, safeTitle)'), 'reader entry must show the reader loading screen before synchronous cache work');
+assert(qml.includes('首次打开会准备快开缓存'), 'reader opening screen must explain the one-time cache preparation');
+const readerStoreSource = read('apps/weread-qt/reader_store.cpp');
+assert(readerStoreSource.includes('reader-parsed-v1.json'), 'reader must persist a versioned parsed EPUB cache');
+assert(readerStoreSource.includes('sourceModifiedMs') && readerStoreSource.includes('sourceSize'), 'parsed EPUB cache must invalidate when the source file changes');
+assert(readerStoreSource.includes('QSaveFile cache'), 'parsed EPUB cache writes must be atomic');
 assert(qml.includes('function extendReaderPaginationWindow'), 'reader must append a small next-page window on demand');
 assert(qml.includes('function ensureReaderPaginationWindowAhead'), 'reader must refill the pagination window before the user reaches its end');
 const readerEntryFunction = qml.slice(qml.indexOf('function enterReaderForBook'), qml.indexOf('function readerPageForCatalogChapter'));

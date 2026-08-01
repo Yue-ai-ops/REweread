@@ -268,6 +268,9 @@ Window {
     property int readerKnownPopularMarkCount: 0
     property int readerPendingPopularMarkCount: 0
     property bool readerOpenedWithLocalProgress: false
+    property bool readerOpening: false
+    property string pendingReaderBookId: ""
+    property string pendingReaderTitle: ""
     property string readerSocialReviewRequestKey: ""
     property bool readerPendingContinueDownload: false
     property string readerPendingContinueBookId: ""
@@ -4465,26 +4468,52 @@ Window {
             return
         }
         var safeTitle = title || bookId
+        root.currentBookId = bookId
+        root.readerSessionStartedMs = Date.now()
+        root.readerSocialPrefetchKey = ""
+        root.closeReaderSocialPopup()
+        root.pendingReaderBookId = bookId
+        root.pendingReaderTitle = safeTitle
+        root.readerOpening = true
+        root.currentReaderPageText = ""
+        root.readerCachedPageCount = 1
+        root.pageIndex = 0
+        root.screenName = "reader"
+        readerOpenFeedbackTimer.restart()
+    }
+
+    function finishEnterReaderForBook() {
+        var bookId = root.pendingReaderBookId
+        var safeTitle = root.pendingReaderTitle
+        if (!root.readerOpening || !bookId || root.screenName !== "reader") {
+            root.readerOpening = false
+            return
+        }
         readerStore.loadBook(bookId, safeTitle)
-            root.currentBookId = bookId
-            root.readerSessionStartedMs = Date.now()
-            root.readerSocialPrefetchKey = ""
-            root.closeReaderSocialPopup()
         var savedOffset = readerStore.savedTextOffset(bookId)
         root.readerOpenedWithLocalProgress = savedOffset >= 0
         if (savedOffset >= 0) {
             root.readerFastOpenAnchorOffset = savedOffset
             root.readerFastOpenMode = false
             root.buildReaderPaginationWindowFromOffset(savedOffset, 12)
-            root.screenName = "reader"
         } else {
             root.buildReaderPaginationWindowFromOffset(root.readerDefaultStartOffset(), 12)
-            root.screenName = "reader"
         }
+        root.readerOpening = false
+        root.pendingReaderBookId = ""
+        root.pendingReaderTitle = ""
+        root.forceReaderRefresh += 1
         if (selfTestMode === "") {
             progressSyncStore.pullProgress(bookId)
             root.scheduleReaderSocialPrefetch()
         }
+    }
+
+    Timer {
+        id: readerOpenFeedbackTimer
+        interval: 180
+        repeat: false
+        onTriggered: root.finishEnterReaderForBook()
     }
 
     function readerTextOffsetForCatalogChapter(chapter) {
@@ -7970,6 +7999,25 @@ Window {
         }
 
         property var book: shelfStore.books[root.selectedIndex] || ({})
+
+        Rectangle {
+            anchors.fill: parent
+            z: 100
+            visible: root.readerOpening
+            color: root.paperColor
+
+            Text {
+                anchors.centerIn: parent
+                width: parent.width - 120
+                text: "正在打开书籍…\n首次打开会准备快开缓存"
+                color: root.inkColor
+                font.pixelSize: 30
+                font.family: root.readerFontFamily
+                font.bold: true
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+            }
+        }
 
         MouseArea {
             id: catalogOpenGestureArea

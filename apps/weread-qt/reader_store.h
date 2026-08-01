@@ -81,6 +81,9 @@ private:
     QString bookDir(const QString &bookId) const;
     QString findReadableEpub(const QString &bookId) const;
     QString ensureExpandedEpub(const QString &bookId);
+    QString parsedCacheFilePath(const QString &bookId) const;
+    bool loadParsedCache(const QString &bookId, const QString &epubPath);
+    void saveParsedCache(const QString &bookId, const QString &epubPath) const;
     QString progressFilePath() const;
     QString bookmarksFilePath() const;
     QString highlightsFilePath() const;

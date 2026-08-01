@@ -9,6 +9,7 @@
 #include <QProcess>
 #include <QRectF>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QSet>
 #include <QTextDocumentFragment>
 #include <QUrl>
@@ -17,6 +18,8 @@
 #include <utility>
 
 namespace {
+
+constexpr int kParsedReaderCacheVersion = 1;
 
 QString htmlAttribute(const QString &tag, const QString &name) {
     const QRegularExpression attrRe(
@@ -254,14 +257,22 @@ void ReaderStore::loadBook(const QString &bookId, const QString &title) {
         return;
     }
 
+    loadBookmarksForBook(bookId);
+    loadHighlightsForBook(bookId);
+    loadParagraphNotesForBook(bookId);
+
+    const QString epubPath = findReadableEpub(bookId);
+    if (!epubPath.isEmpty() && loadParsedCache(bookId, epubPath)) {
+        persistTextLengthForProgress(bookId);
+        emit contentChanged();
+        return;
+    }
+
     const QStringList chapters = chapterPaths(expandedDir);
     if (chapters.isEmpty()) {
         setError(m_title, QStringLiteral("找不到可读章节。"));
         return;
     }
-    loadBookmarksForBook(bookId);
-    loadHighlightsForBook(bookId);
-    loadParagraphNotesForBook(bookId);
 
     QStringList parts;
     parts.reserve(chapters.size());
@@ -340,6 +351,9 @@ void ReaderStore::loadBook(const QString &bookId, const QString &title) {
         m_bodyText = QStringLiteral("这本书暂时没有可显示文字。");
     }
     m_status = QStringLiteral("chapters:%1").arg(chapters.size());
+    if (!epubPath.isEmpty()) {
+        saveParsedCache(bookId, epubPath);
+    }
     persistTextLengthForProgress(bookId);
     emit contentChanged();
 }
@@ -1163,6 +1177,64 @@ QString ReaderStore::ensureExpandedEpub(const QString &bookId) {
         return {};
     }
     return expandedDir;
+}
+
+QString ReaderStore::parsedCacheFilePath(const QString &bookId) const {
+    return QDir(bookDir(bookId)).filePath(QStringLiteral("reader-parsed-v1.json"));
+}
+
+bool ReaderStore::loadParsedCache(const QString &bookId, const QString &epubPath) {
+    QFile cache(parsedCacheFilePath(bookId));
+    if (!cache.open(QIODevice::ReadOnly)) {
+        return false;
+    }
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(cache.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        return false;
+    }
+
+    const QFileInfo source(epubPath);
+    const QVariantMap value = document.object().toVariantMap();
+    if (value.value(QStringLiteral("version")).toInt() != kParsedReaderCacheVersion
+        || value.value(QStringLiteral("sourceSize")).toLongLong() != source.size()
+        || value.value(QStringLiteral("sourceModifiedMs")).toLongLong() != source.lastModified().toMSecsSinceEpoch()) {
+        return false;
+    }
+
+    const QString cachedBody = value.value(QStringLiteral("bodyText")).toString();
+    const QVariantList cachedChapters = value.value(QStringLiteral("chapters")).toList();
+    if (cachedBody.isEmpty() || cachedChapters.isEmpty()) {
+        return false;
+    }
+
+    m_bodyText = cachedBody;
+    m_imageSource = value.value(QStringLiteral("imageSource")).toString();
+    m_imageSources = value.value(QStringLiteral("imageSources")).toList();
+    m_chapters = cachedChapters;
+    m_footnotes = value.value(QStringLiteral("footnotes")).toList();
+    m_status = QStringLiteral("cached:%1").arg(m_chapters.size());
+    return true;
+}
+
+void ReaderStore::saveParsedCache(const QString &bookId, const QString &epubPath) const {
+    const QFileInfo source(epubPath);
+    QVariantMap value;
+    value.insert(QStringLiteral("version"), kParsedReaderCacheVersion);
+    value.insert(QStringLiteral("sourceSize"), source.size());
+    value.insert(QStringLiteral("sourceModifiedMs"), source.lastModified().toMSecsSinceEpoch());
+    value.insert(QStringLiteral("bodyText"), m_bodyText);
+    value.insert(QStringLiteral("imageSource"), m_imageSource);
+    value.insert(QStringLiteral("imageSources"), m_imageSources);
+    value.insert(QStringLiteral("chapters"), m_chapters);
+    value.insert(QStringLiteral("footnotes"), m_footnotes);
+
+    QSaveFile cache(parsedCacheFilePath(bookId));
+    if (!cache.open(QIODevice::WriteOnly)) {
+        return;
+    }
+    cache.write(QJsonDocument(QJsonObject::fromVariantMap(value)).toJson(QJsonDocument::Compact));
+    cache.commit();
 }
 
 QStringList ReaderStore::chapterPaths(const QString &expandedDir) const {
