@@ -44,5 +44,8 @@ assert(qml.includes('nextMode !== "english"'), 'password fields must reject clou
 assert(qml.includes('PinyinEngine.candidates(keyboardPinyinBuffer, 50)'), 'pinyin input must retain enough candidates for multiple pages');
 assert(qml.includes('function keyboardChangeCandidatePage') && qml.includes('keyboardPagedPinyinCandidates'), 'pinyin candidates must expose explicit page navigation');
 assert(qml.includes('text: "上页"') && qml.includes('text: "下页"'), 'candidate row must show previous and next page controls');
+assert(qml.includes('property int uniformKeyWidth') && qml.includes('width: keyRow.uniformKeyWidth'), 'letter rows must use one consistent key width');
+assert(qml.includes('x: Math.round((parent.width - rowContentWidth) / 2)'), 'short letter rows must be centered instead of stretching their keys');
+assert(qml.includes('property int usableWidth: width - 2 * spacing'), 'keyboard action row must consume the full available width');
 
 console.log('pinyin ime ok');

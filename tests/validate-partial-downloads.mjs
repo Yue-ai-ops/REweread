@@ -19,5 +19,7 @@ assert(manager.includes('downloadState = partial_state'), 'partial EPUBs must no
 assert(detail.includes('self.status.downloadState == "partial"'), 'book detail must label partial full-book files distinctly');
 assert(downloads.includes('已下载部分'), 'downloads list must show partial full-book files distinctly');
 assert(app.includes('status.downloadState == "full"'), 'app must only short-circuit full-download action for real full downloads');
+assert(manager.includes('function ContentSettings:merge_set_cookie'), 'standalone downloads must accept refreshed response cookies');
+assert(manager.includes('function ContentSettings:update_auth'), 'standalone downloads must accept refreshed authentication state');
 
 console.log('partial downloads ok');

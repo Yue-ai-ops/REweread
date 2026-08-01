@@ -10494,7 +10494,10 @@ Window {
                 Row {
                     id: keyRow
                     property int keyCount: modelData.length
-                    width: parent.width
+                    property int uniformKeyWidth: Math.floor((parent.width - 9 * spacing) / 10)
+                    property int rowContentWidth: keyCount * uniformKeyWidth + (keyCount - 1) * spacing
+                    x: Math.round((parent.width - rowContentWidth) / 2)
+                    width: rowContentWidth
                     height: 46
                     spacing: 8
 
@@ -10502,7 +10505,7 @@ Window {
                         model: modelData
 
                         Rectangle {
-                            width: Math.floor((parent.width - (keyRow.keyCount - 1) * 8) / keyRow.keyCount)
+                            width: keyRow.uniformKeyWidth
                             height: parent.height
                             radius: 4
                             color: root.surfaceColor
@@ -10529,13 +10532,16 @@ Window {
             }
 
             Row {
+                id: keyboardActionRow
                 width: parent.width
                 height: 48
                 spacing: 10
                 visible: !root.keyboardHandwritingMode
 
+                property int usableWidth: width - 2 * spacing
+
                 Rectangle {
-                    width: Math.floor(parent.width * 0.26)
+                    width: Math.floor(keyboardActionRow.usableWidth * 0.27)
                     height: parent.height
                     radius: 4
                     color: root.surfaceColor
@@ -10557,7 +10563,7 @@ Window {
                 }
 
                 Rectangle {
-                    width: Math.floor(parent.width * 0.34)
+                    width: Math.floor(keyboardActionRow.usableWidth * 0.46)
                     height: parent.height
                     radius: 4
                     color: root.surfaceColor
@@ -10585,7 +10591,9 @@ Window {
                 }
 
                 Rectangle {
-                    width: Math.floor(parent.width * 0.18)
+                    width: keyboardActionRow.usableWidth
+                        - Math.floor(keyboardActionRow.usableWidth * 0.27)
+                        - Math.floor(keyboardActionRow.usableWidth * 0.46)
                     height: parent.height
                     radius: 4
                     color: root.surfaceColor

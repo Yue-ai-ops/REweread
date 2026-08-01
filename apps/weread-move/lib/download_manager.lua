@@ -77,6 +77,7 @@ function ContentSettings:new(config, cache_dir)
     })
     cache.download_book_images = cache.download_book_images ~= false
     return setmetatable({
+        config = config,
         cache_dir = cache_dir or DEFAULT_CACHE_DIR,
         values = {
             api_key = config:get("api_key", ""),
@@ -86,6 +87,12 @@ function ContentSettings:new(config, cache_dir)
             cache = cache,
         },
     }, self)
+end
+
+function ContentSettings:sync_auth_from_config()
+    for _, key in ipairs({ "api_key", "cookies", "wr_ticket", "wr_wrpa" }) do
+        self.values[key] = self.config:get(key, self.values[key])
+    end
 end
 
 function ContentSettings:get(key, default)
@@ -98,7 +105,24 @@ function ContentSettings:set(key, value)
     self.values[key] = value
 end
 
+function ContentSettings:merge_set_cookie(set_cookie)
+    self.config:merge_set_cookie(set_cookie)
+    self.config:flush()
+    self:sync_auth_from_config()
+end
+
+function ContentSettings:update_auth(updates, opts)
+    self.config:update_auth(updates, opts)
+    self:sync_auth_from_config()
+end
+
 function ContentSettings:flush()
+    self.config:update_auth({
+        api_key = self.values.api_key,
+        cookies = self.values.cookies,
+        wr_ticket = self.values.wr_ticket,
+        wr_wrpa = self.values.wr_wrpa,
+    }, { replace_cookies = true })
 end
 
 function ContentSettings:get_download_dir()
