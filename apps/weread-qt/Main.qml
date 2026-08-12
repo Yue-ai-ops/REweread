@@ -12,6 +12,12 @@ Window {
     visible: true
     color: root.paperColor
 
+    onFrameSwapped: {
+        if (root.readerOpening && root.readerOpeningAwaitingFrame) {
+            root.commitReaderOpeningFeedback(false)
+        }
+    }
+
     onClosing: function(close) {
         root.flushPendingFreeInkStrokes()
     }
@@ -269,6 +275,14 @@ Window {
     property int readerPendingPopularMarkCount: 0
     property bool readerOpenedWithLocalProgress: false
     property bool readerOpening: false
+    property bool readerOpeningAwaitingFrame: false
+    property bool readerOpeningFrameCommitted: false
+    property bool readerOpeningFallbackUsed: false
+    property double readerOpenStartedMs: 0
+    property double readerOpenFrameMs: 0
+    property double readerOpenLoadStartedMs: 0
+    property double readerOpenCompletedMs: 0
+    property int readerOpenMinimumFeedbackMs: 350
     property string pendingReaderBookId: ""
     property string pendingReaderTitle: ""
     property string readerSocialReviewRequestKey: ""
@@ -2952,16 +2966,8 @@ Window {
         if (!root.enterReaderForSelfTest("reader-open-selftest")) {
             return
         }
-        root.ensureReaderPagination()
-        var pageText = root.readerPageText(readerStore.bodyText, root.readerTextTopY())
-        var statusText = readerStore.status
-        if (statusText === "error" || pageText.length === 0) {
-            console.log("reader-open-selftest=fail status=" + statusText + " pages=" + root.readerCachedPageCount)
-            appControl.quitToSystem()
-            return
-        }
-        console.log("reader-open-selftest=ok pages=" + root.readerCachedPageCount + " chars=" + String(readerStore.bodyText || "").length)
-        appControl.quitToSystem()
+        readerOpenSelfTestTimer.attempts = 0
+        readerOpenSelfTestTimer.start()
     }
 
     function firstReaderImagePage() {
@@ -3268,6 +3274,57 @@ Window {
     }
 
     property double settingsSelfTestStartMs: 0
+
+    Timer {
+        id: readerOpenSelfTestTimer
+        property int attempts: 0
+        interval: 100
+        repeat: true
+        onTriggered: {
+            attempts += 1
+            var totalMs = Math.max(0, Date.now() - root.readerOpenStartedMs)
+            if (root.readerOpening) {
+                if (totalMs < 30000 && attempts < 300) {
+                    return
+                }
+                stop()
+                console.log("reader-open-selftest=fail timeout total_ms=" + totalMs +
+                            " frame=" + root.readerOpeningFrameCommitted +
+                            " fallback=" + root.readerOpeningFallbackUsed)
+                appControl.quitToSystem()
+                return
+            }
+
+            stop()
+            root.ensureReaderPagination()
+            var pageText = root.readerPageText(readerStore.bodyText, root.readerTextTopY())
+            var statusText = readerStore.status
+            var feedbackMs = Math.max(0, root.readerOpenLoadStartedMs - root.readerOpenFrameMs)
+            var phaseOrderValid = root.readerOpenStartedMs > 0
+                    && root.readerOpenFrameMs >= root.readerOpenStartedMs
+                    && root.readerOpenLoadStartedMs >= root.readerOpenFrameMs
+                    && root.readerOpenCompletedMs >= root.readerOpenLoadStartedMs
+            var feedbackValid = root.readerOpeningFrameCommitted
+                    && !root.readerOpeningFallbackUsed
+                    && feedbackMs >= root.readerOpenMinimumFeedbackMs - 30
+            if (statusText === "error" || pageText.length === 0 || !phaseOrderValid || !feedbackValid) {
+                console.log("reader-open-selftest=fail status=" + statusText +
+                            " pages=" + root.readerCachedPageCount +
+                            " frame=" + root.readerOpeningFrameCommitted +
+                            " fallback=" + root.readerOpeningFallbackUsed +
+                            " feedback_ms=" + feedbackMs +
+                            " total_ms=" + (root.readerOpenCompletedMs - root.readerOpenStartedMs))
+                appControl.quitToSystem()
+                return
+            }
+            console.log("reader-open-selftest=ok pages=" + root.readerCachedPageCount +
+                        " chars=" + String(readerStore.bodyText || "").length +
+                        " feedback_ms=" + feedbackMs +
+                        " total_ms=" + (root.readerOpenCompletedMs - root.readerOpenStartedMs) +
+                        " cache=" + statusText)
+            appControl.quitToSystem()
+        }
+    }
 
     Timer {
         id: readerSettingsSelfTestTimer
@@ -4467,6 +4524,8 @@ Window {
         if (!bookId || bookId === "") {
             return
         }
+        readerOpenFeedbackTimer.stop()
+        readerOpenFrameFallbackTimer.stop()
         var safeTitle = title || bookId
         root.currentBookId = bookId
         root.readerSessionStartedMs = Date.now()
@@ -4475,10 +4534,31 @@ Window {
         root.pendingReaderBookId = bookId
         root.pendingReaderTitle = safeTitle
         root.readerOpening = true
+        root.readerOpeningAwaitingFrame = true
+        root.readerOpeningFrameCommitted = false
+        root.readerOpeningFallbackUsed = false
+        root.readerOpenStartedMs = Date.now()
+        root.readerOpenFrameMs = 0
+        root.readerOpenLoadStartedMs = 0
+        root.readerOpenCompletedMs = 0
         root.currentReaderPageText = ""
         root.readerCachedPageCount = 1
         root.pageIndex = 0
         root.screenName = "reader"
+        root.forceReaderRefresh += 1
+        readerOpenFrameFallbackTimer.restart()
+    }
+
+    function commitReaderOpeningFeedback(fallback) {
+        if (!root.readerOpening || !root.readerOpeningAwaitingFrame) {
+            return
+        }
+        root.readerOpeningAwaitingFrame = false
+        root.readerOpeningFrameCommitted = !fallback
+        root.readerOpeningFallbackUsed = fallback
+        root.readerOpenFrameMs = Date.now()
+        readerOpenFrameFallbackTimer.stop()
+        readerOpenFeedbackTimer.interval = fallback ? 0 : root.readerOpenMinimumFeedbackMs
         readerOpenFeedbackTimer.restart()
     }
 
@@ -4487,8 +4567,10 @@ Window {
         var safeTitle = root.pendingReaderTitle
         if (!root.readerOpening || !bookId || root.screenName !== "reader") {
             root.readerOpening = false
+            root.readerOpeningAwaitingFrame = false
             return
         }
+        root.readerOpenLoadStartedMs = Date.now()
         readerStore.loadBook(bookId, safeTitle)
         var savedOffset = readerStore.savedTextOffset(bookId)
         root.readerOpenedWithLocalProgress = savedOffset >= 0
@@ -4499,7 +4581,9 @@ Window {
         } else {
             root.buildReaderPaginationWindowFromOffset(root.readerDefaultStartOffset(), 12)
         }
+        root.readerOpenCompletedMs = Date.now()
         root.readerOpening = false
+        root.readerOpeningAwaitingFrame = false
         root.pendingReaderBookId = ""
         root.pendingReaderTitle = ""
         root.forceReaderRefresh += 1
@@ -4511,9 +4595,16 @@ Window {
 
     Timer {
         id: readerOpenFeedbackTimer
-        interval: 180
+        interval: root.readerOpenMinimumFeedbackMs
         repeat: false
         onTriggered: root.finishEnterReaderForBook()
+    }
+
+    Timer {
+        id: readerOpenFrameFallbackTimer
+        interval: 500
+        repeat: false
+        onTriggered: root.commitReaderOpeningFeedback(true)
     }
 
     function readerTextOffsetForCatalogChapter(chapter) {
@@ -8016,6 +8107,10 @@ Window {
                 font.bold: true
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
+            }
+
+            MouseArea {
+                anchors.fill: parent
             }
         }
 

@@ -653,9 +653,15 @@ assert(qml.includes('function buildReaderPaginationWindowFromOffset'), 'reader m
 assert(qml.includes('root.buildReaderPaginationWindowFromOffset(savedOffset, 12)'), 'reader entry must preload only the current window from saved progress');
 const readerOpenFeedbackFunction = qml.slice(qml.indexOf('function enterReaderForBook'), qml.indexOf('function readerPageForCatalogChapter'));
 assert(qml.includes('property bool readerOpening: false'), 'reader entry must expose immediate visible opening feedback');
-assert(qml.includes('readerOpenFeedbackTimer.restart()'), 'reader entry must yield one frame before parsing the selected EPUB');
+assert(qml.includes('onFrameSwapped') && qml.includes('root.commitReaderOpeningFeedback(false)'), 'reader entry must observe a submitted loading frame before parsing the selected EPUB');
+assert(qml.includes('property int readerOpenMinimumFeedbackMs: 350'), 'reader opening feedback must remain visible for one Gallery 3 black-and-white refresh window');
+assert(qml.includes('id: readerOpenFrameFallbackTimer') && qml.includes('root.commitReaderOpeningFeedback(true)'), 'reader entry must retain a bounded fallback if the platform never reports a frame swap');
+assert(qml.includes('readerOpenFeedbackTimer.interval = fallback ? 0 : root.readerOpenMinimumFeedbackMs'), 'reader parsing must wait for the visible feedback interval after a real frame submission');
 assert(readerOpenFeedbackFunction.indexOf('root.screenName = "reader"') >= 0 && readerOpenFeedbackFunction.indexOf('root.screenName = "reader"') < readerOpenFeedbackFunction.indexOf('readerStore.loadBook(bookId, safeTitle)'), 'reader entry must show the reader loading screen before synchronous cache work');
 assert(qml.includes('首次打开会准备快开缓存'), 'reader opening screen must explain the one-time cache preparation');
+assert(qml.includes('id: readerOpenSelfTestTimer') && qml.includes('if (root.readerOpening)'), 'reader-open device self-test must wait for the asynchronous parse to complete');
+assert(qml.includes('feedback_ms=') && qml.includes('total_ms='), 'reader-open device self-test must report feedback and total-open timing separately');
+assert(qml.includes('root.readerOpeningFrameCommitted') && qml.includes('!root.readerOpeningFallbackUsed'), 'reader-open device self-test must reject a fallback-only result as proof of visible feedback');
 const readerStoreSource = read('apps/weread-qt/reader_store.cpp');
 assert(readerStoreSource.includes('reader-parsed-v1.json'), 'reader must persist a versioned parsed EPUB cache');
 assert(readerStoreSource.includes('sourceModifiedMs') && readerStoreSource.includes('sourceSize'), 'parsed EPUB cache must invalidate when the source file changes');
@@ -997,7 +1003,7 @@ const readerLayoutSelfTestSnippet = qml.slice(qml.indexOf('function prepareReade
 assert(readerLayoutSelfTestSnippet.includes('Math.floor(count * 0.08)'), 'reader layout self-test must skip copyright/front-matter pages and sample body text');
 assert(!readerLayoutSelfTestSnippet.includes('[\n            0,'), 'reader layout self-test must not use page zero front matter as the typography proof');
 const enterReaderIndex = qml.indexOf('function enterReaderForBook');
-const enterReaderSnippet = qml.slice(enterReaderIndex, enterReaderIndex + 1800);
+const enterReaderSnippet = qml.slice(enterReaderIndex, qml.indexOf('function readerTextOffsetForCatalogChapter', enterReaderIndex));
 assert(enterReaderSnippet.includes('if (selfTestMode === "")'), 'reader self-tests must skip async helper fetches so luajit processes are not destroyed during test shutdown');
 assert(enterReaderSnippet.includes('progressSyncStore.pullProgress(bookId)') && enterReaderSnippet.includes('root.scheduleReaderSocialPrefetch()'), 'normal reader opens must fetch progress and schedule current-page comments');
 assert(!enterReaderSnippet.includes('notesStore.refreshBookNotes(bookId)'), 'normal reader opens must not block current-page comments behind full-book note sync');
